@@ -15,9 +15,12 @@ class WebRTCShowdown {
         
         // Device motion
         this.deviceMotion = { alpha: 0, beta: 0, gamma: 0 };
-        this.initialBeta = null;
+        this.restingBeta = null;
+        this.initialBeta = null; 
         this.drawThreshold = 30;
         this.drawTime = null;
+        this.isCalibrating = false;
+        this.isCalibrated = false;
         
         this.initializeEventListeners();
         this.requestDevicePermissions();
@@ -73,21 +76,88 @@ class WebRTCShowdown {
             this.deviceMotion.alpha = event.alpha || 0;
             this.deviceMotion.beta = event.beta || 0;
             this.deviceMotion.gamma = event.gamma || 0;
-            this.handleDeviceMotion();
+            
+            if (this.isCalibrating) {
+                this.updateCalibrationDisplay();
+            } else {
+                this.handleDeviceMotion();
+            }
         });
+        
+        console.log('Device orientation listening started');
+        if (document.getElementById('tiltStatus')) {
+            document.getElementById('tiltStatus').textContent = 'Device orientation enabled! 📱';
+        }
     }
     
     handleDeviceMotion() {
         if (this.gameState !== 'dueling' || !this.gameData.highNoonTime || this.drawTime) return;
         
         if (this.initialBeta === null) {
-            this.initialBeta = this.deviceMotion.beta;
+            this.initialBeta = this.restingBeta || this.deviceMotion.beta;
             return;
         }
         
         const tiltChange = this.initialBeta - this.deviceMotion.beta;
         if (tiltChange > this.drawThreshold) {
             this.draw();
+        }
+    }
+    
+    // Calibration methods
+    startCalibration() {
+        this.isCalibrating = true;
+        this.showScreen('calibration');
+        document.getElementById('calibrationData').style.display = 'block';
+    }
+    
+    updateCalibrationDisplay() {
+        const currentTilt = Math.round(this.deviceMotion.beta * 10) / 10;
+        document.getElementById('currentTilt').textContent = currentTilt + '°';
+        
+        if (this.restingBeta !== null) {
+            const tiltFromResting = Math.round((this.restingBeta - this.deviceMotion.beta) * 10) / 10;
+            const status = tiltFromResting > this.drawThreshold ? '🔥 DRAW!' : 
+                          tiltFromResting > 10 ? '⚡ Getting there...' : '📱 Hold steady';
+            document.getElementById('tiltDebug').textContent = status;
+        }
+    }
+    
+    calibrateResting() {
+        this.restingBeta = this.deviceMotion.beta;
+        document.getElementById('restingAngle').textContent = Math.round(this.restingBeta * 10) / 10 + '°';
+        document.getElementById('calibrationStep').innerHTML = `
+            Step 2: Practice drawing (tilt phone up fast)<br>
+            Current sensitivity: ${this.drawThreshold}°<br>
+            <button onclick="window.game.adjustSensitivity(-10)">More Sensitive</button>
+            <button onclick="window.game.adjustSensitivity(10)">Less Sensitive</button>
+        `;
+        document.getElementById('finishCalibration').style.display = 'block';
+    }
+    
+    adjustSensitivity(change) {
+        this.drawThreshold = Math.max(10, Math.min(60, this.drawThreshold + change));
+        document.getElementById('drawThreshold').textContent = this.drawThreshold + '°';
+        document.getElementById('calibrationStep').innerHTML = `
+            Step 2: Practice drawing (tilt phone up fast)<br>
+            Current sensitivity: ${this.drawThreshold}°<br>
+            <button onclick="window.game.adjustSensitivity(-10)">More Sensitive</button>
+            <button onclick="window.game.adjustSensitivity(10)">Less Sensitive</button>
+        `;
+    }
+    
+    finishCalibration() {
+        this.isCalibrating = false;
+        this.isCalibrated = true;
+        this.showScreen('menu');
+        
+        // Add calibrated indicator
+        const statusDiv = document.getElementById('tiltStatus') || document.createElement('div');
+        statusDiv.textContent = `✅ Calibrated! (${this.drawThreshold}° sensitivity)`;
+        statusDiv.style.cssText = 'margin: 10px; font-size: 0.9rem; color: #32CD32;';
+        if (!document.getElementById('tiltStatus')) {
+            statusDiv.id = 'tiltStatus';
+            document.getElementById('menu').appendChild(statusDiv);
         }
     }
     
@@ -382,7 +452,7 @@ class WebRTCShowdown {
     }
     
     showScreen(screen) {
-        const screens = ['menu', 'room', 'game', 'results'];
+        const screens = ['menu', 'calibration', 'room', 'game', 'results'];
         screens.forEach(s => {
             const element = document.getElementById(s);
             if (element) element.classList.add('hidden');
@@ -472,6 +542,10 @@ function createRoom() {
 
 function joinRoom() {
     window.game.joinRoom();
+}
+
+function startCalibration() {
+    window.game.startCalibration();
 }
 
 function handleOffer() {

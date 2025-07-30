@@ -233,8 +233,26 @@
                     • Direct phone-to-phone connection<br>
                     • Ultra-low latency<br>
                     • Create room or join with code<br>
-                    • Tilt phone up fast to draw!
+                    • Calibrate tilt sensitivity first!
                 </div>
+                
+                <button class="menu-button" onclick="startCalibration()" style="background: #228B22;">📱 Calibrate Tilt</button>
+            </div>
+            
+            <!-- Calibration Screen -->
+            <div id="calibration" class="hidden">
+                <div class="status">📱 Tilt Calibration</div>
+                <div id="calibrationStep" class="instructions">
+                    Step 1: Hold phone upright (like holstered gun)<br>
+                    <button onclick="window.game.calibrateResting()">Set Resting Position</button>
+                </div>
+                <div id="calibrationData" class="signaling" style="display: none;">
+                    <div>Current tilt: <span id="currentTilt">0°</span></div>
+                    <div>Resting: <span id="restingAngle">--°</span></div>
+                    <div>Draw threshold: <span id="drawThreshold">30°</span></div>
+                    <div>Status: <span id="tiltDebug">Waiting...</span></div>
+                </div>
+                <button id="finishCalibration" onclick="window.game.finishCalibration()" style="display: none;">✅ Calibration Complete</button>
             </div>
             
             <!-- Room Screen -->
