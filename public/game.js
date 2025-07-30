@@ -1,6 +1,6 @@
 class ShowdownGame {
     constructor() {
-        this.socket = io();
+        this.playerId = null;
         this.gameState = 'menu';
         this.gameId = null;
         this.isDrawing = false;
@@ -13,6 +13,7 @@ class ShowdownGame {
         };
         this.initialBeta = null;
         this.drawThreshold = 30; // degrees to tilt up for draw
+        this.pollInterval = null;
         
         this.initializeEventListeners();
         this.requestDevicePermissions();
@@ -62,40 +63,6 @@ class ShowdownGame {
     }
     
     initializeEventListeners() {
-        this.socket.on('waiting', (data) => {
-            this.showScreen('waiting');
-            document.getElementById('gameStatus').textContent = data.message;
-        });
-        
-        this.socket.on('gameStart', (data) => {
-            this.gameId = data.gameId;
-            this.showScreen('game');
-            document.getElementById('gameStatus').textContent = 'Duel starting...';
-        });
-        
-        this.socket.on('countdown', (data) => {
-            const countdownEl = document.getElementById('countdown');
-            if (data.count > 0) {
-                countdownEl.textContent = data.count;
-                this.vibrate(200);
-            } else {
-                countdownEl.textContent = '';
-            }
-        });
-        
-        this.socket.on('highNoon', (data) => {
-            this.startHighNoon(data.timestamp);
-        });
-        
-        this.socket.on('gameEnd', (data) => {
-            this.showResults(data);
-        });
-        
-        this.socket.on('playerDisconnected', () => {
-            alert('Opponent disconnected!');
-            this.restartGame();
-        });
-        
         // Add tap-to-fire for backup/testing
         document.addEventListener('click', (e) => {
             if (this.gameState === 'dueling' && this.highNoonTime && !this.drawTime) {
@@ -111,8 +78,108 @@ class ShowdownGame {
         });
     }
     
+    async joinGame() {
+        const nameInput = document.getElementById('playerName');
+        const name = nameInput.value.trim() || 'Anonymous Cowboy';
+        
+        try {
+            const response = await fetch('/api/join', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ name })
+            });
+            
+            const data = await response.json();
+            this.playerId = data.playerId;
+            
+            if (data.status === 'waiting') {
+                this.gameState = 'waiting';
+                this.showScreen('waiting');
+                this.startPolling();
+            } else if (data.status === 'matched') {
+                this.gameId = data.gameId;
+                this.gameState = 'game';
+                this.showScreen('game');
+                this.startPolling();
+            }
+            
+        } catch (error) {
+            console.error('Error joining game:', error);
+            alert('Error joining game. Please try again.');
+        }
+    }
+    
+    startPolling() {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        
+        this.pollInterval = setInterval(async () => {
+            if (!this.playerId) return;
+            
+            try {
+                const response = await fetch(`/api/game/${this.playerId}`);
+                const data = await response.json();
+                
+                this.handleGameUpdate(data);
+                
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+        }, 500); // Poll every 500ms
+    }
+    
+    handleGameUpdate(data) {
+        if (data.status === 'waiting') {
+            if (this.gameState !== 'waiting') {
+                this.gameState = 'waiting';
+                this.showScreen('waiting');
+            }
+            return;
+        }
+        
+        if (data.status === 'game') {
+            this.gameId = data.gameId;
+            
+            if (data.state === 'countdown') {
+                if (this.gameState !== 'countdown') {
+                    this.gameState = 'countdown';
+                    this.showScreen('game');
+                    document.getElementById('gameStatus').textContent = 'Duel starting...';
+                }
+                
+                const countdownEl = document.getElementById('countdown');
+                if (data.countdown > 0) {
+                    countdownEl.textContent = data.countdown;
+                    this.vibrate(200);
+                } else {
+                    countdownEl.textContent = '';
+                }
+                
+            } else if (data.state === 'dueling') {
+                if (this.gameState !== 'dueling') {
+                    this.gameState = 'dueling';
+                    
+                    if (data.highNoonTime) {
+                        this.startHighNoon(data.highNoonTime);
+                    } else {
+                        document.getElementById('gameStatus').textContent = 'Get ready to draw...';
+                        document.getElementById('phoneInstruction').textContent = 'Hold phone upright, wait for signal';
+                    }
+                }
+                
+                // Check if high noon just started
+                if (data.highNoonTime && !this.highNoonTime) {
+                    this.startHighNoon(data.highNoonTime);
+                }
+                
+            } else if (data.state === 'finished') {
+                this.showResults(data);
+            }
+        }
+    }
+    
     startHighNoon(timestamp) {
-        this.gameState = 'dueling';
         this.highNoonTime = timestamp;
         this.initialBeta = null;
         
@@ -137,7 +204,7 @@ class ShowdownGame {
         }, 1000);
     }
     
-    draw() {
+    async draw() {
         if (this.drawTime || !this.highNoonTime) return;
         
         this.drawTime = Date.now() - this.highNoonTime;
@@ -146,10 +213,20 @@ class ShowdownGame {
         document.getElementById('phoneInstruction').textContent = 'BANG! Draw complete!';
         document.getElementById('drawIndicator').style.background = '#32CD32';
         
-        this.socket.emit('playerDraw', {
-            gameId: this.gameId,
-            drawTime: this.drawTime
-        });
+        try {
+            await fetch('/api/draw', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    playerId: this.playerId,
+                    drawTime: this.drawTime
+                })
+            });
+        } catch (error) {
+            console.error('Error submitting draw:', error);
+        }
         
         this.vibrate(300);
     }
@@ -172,10 +249,14 @@ class ShowdownGame {
         this.gameState = 'finished';
         this.showScreen('results');
         
-        const myId = this.socket.id;
-        const isWinner = data.winner === myId;
-        const myResult = data.results[myId];
-        const opponentResult = data.results[Object.keys(data.results).find(id => id !== myId)];
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
+        
+        const isWinner = data.winner === this.playerId;
+        const myResult = data.results[this.playerId];
+        const opponentResult = data.results[Object.keys(data.results).find(id => id !== this.playerId)];
         
         let resultText = '';
         
@@ -198,21 +279,19 @@ class ShowdownGame {
         document.getElementById('resultText').innerHTML = resultText;
     }
     
-    joinGame() {
-        const nameInput = document.getElementById('playerName');
-        const name = nameInput.value.trim() || 'Anonymous Cowboy';
-        
-        this.socket.emit('joinGame', { name });
-        this.gameState = 'waiting';
-    }
-    
     restartGame() {
         this.gameState = 'menu';
+        this.playerId = null;
         this.gameId = null;
         this.isDrawing = false;
         this.highNoonTime = null;
         this.drawTime = null;
         this.initialBeta = null;
+        
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
         
         document.getElementById('drawIndicator').style.display = 'none';
         document.getElementById('drawIndicator').style.background = '#FF4500';

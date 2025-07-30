@@ -1,31 +1,28 @@
 const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
-
+app.use(express.json());
 app.use(express.static('public'));
 
-// Game state
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/public/index.html');
+});
+
+// Game state (in memory - will reset on deployment)
 const games = new Map();
 const waitingPlayers = [];
+const players = new Map();
 
 class DuelGame {
   constructor(player1, player2) {
     this.id = uuidv4();
     this.players = [player1, player2];
-    this.state = 'waiting'; // waiting, countdown, dueling, finished
-    this.countdown = 0;
+    this.state = 'countdown'; // countdown, dueling, finished
+    this.countdown = 3;
     this.results = {};
-    this.startTime = null;
+    this.startTime = Date.now();
+    this.highNoonTime = null;
     
     // Add players to game
     player1.gameId = this.id;
@@ -38,16 +35,7 @@ class DuelGame {
   }
   
   startCountdown() {
-    this.state = 'countdown';
-    this.countdown = 3;
-    
-    this.broadcast('gameStart', {
-      gameId: this.id,
-      opponent: this.getOpponentData()
-    });
-    
     const countdownInterval = setInterval(() => {
-      this.broadcast('countdown', { count: this.countdown });
       this.countdown--;
       
       if (this.countdown < 0) {
@@ -59,23 +47,22 @@ class DuelGame {
   
   startDuel() {
     this.state = 'dueling';
-    this.startTime = Date.now();
     
     // Random delay before "high noon" signal (1-5 seconds)
     const delay = Math.random() * 4000 + 1000;
     
     setTimeout(() => {
       if (this.state === 'dueling') {
-        this.broadcast('highNoon', { timestamp: Date.now() });
+        this.highNoonTime = Date.now();
       }
     }, delay);
   }
   
   playerDraw(playerId, drawTime) {
-    if (this.state !== 'dueling') return;
+    if (this.state !== 'dueling' || !this.highNoonTime) return false;
     
     const player = this.players.find(p => p.id === playerId);
-    if (!player || this.results[playerId]) return;
+    if (!player || this.results[playerId]) return false;
     
     this.results[playerId] = {
       drawTime,
@@ -86,6 +73,8 @@ class DuelGame {
     if (Object.keys(this.results).length === 2) {
       this.finishDuel();
     }
+    
+    return true;
   }
   
   finishDuel() {
@@ -104,88 +93,110 @@ class DuelGame {
       winner = p2Id;
     }
     
-    this.broadcast('gameEnd', {
-      winner,
-      results: this.results,
-      players: this.players.map(p => ({ id: p.id, name: p.name }))
-    });
+    this.winner = winner;
     
-    // Clean up after 10 seconds
+    // Clean up after 30 seconds
     setTimeout(() => {
       this.cleanup();
-    }, 10000);
-  }
-  
-  broadcast(event, data) {
-    this.players.forEach(player => {
-      if (player.socket) {
-        player.socket.emit(event, data);
-      }
-    });
-  }
-  
-  getOpponentData() {
-    return this.players.map(p => ({ id: p.id, name: p.name }));
+    }, 30000);
   }
   
   cleanup() {
     games.delete(this.id);
     this.players.forEach(player => {
-      player.gameId = null;
+      players.delete(player.id);
     });
+  }
+  
+  getGameState(playerId) {
+    const opponent = this.players.find(p => p.id !== playerId);
+    return {
+      gameId: this.id,
+      state: this.state,
+      countdown: this.countdown,
+      highNoonTime: this.highNoonTime,
+      opponent: opponent ? { id: opponent.id, name: opponent.name } : null,
+      results: this.results,
+      winner: this.winner || null
+    };
   }
 }
 
-io.on('connection', (socket) => {
-  console.log('Player connected:', socket.id);
+// API Routes
+app.post('/api/join', (req, res) => {
+  const playerId = uuidv4();
+  const playerName = req.body.name || `Cowboy ${playerId.slice(0, 4)}`;
   
-  socket.on('joinGame', (playerData) => {
-    const player = {
-      id: socket.id,
-      name: playerData.name || `Cowboy ${socket.id.slice(0, 4)}`,
-      socket: socket,
-      gameId: null
-    };
-    
-    // Try to match with waiting player
-    if (waitingPlayers.length > 0) {
-      const opponent = waitingPlayers.shift();
-      new DuelGame(opponent, player);
-    } else {
-      waitingPlayers.push(player);
-      socket.emit('waiting', { message: 'Waiting for opponent...' });
-    }
-  });
+  const player = {
+    id: playerId,
+    name: playerName,
+    gameId: null,
+    lastSeen: Date.now()
+  };
   
-  socket.on('playerDraw', (data) => {
-    const game = games.get(data.gameId);
-    if (game) {
-      game.playerDraw(socket.id, data.drawTime);
-    }
-  });
+  players.set(playerId, player);
   
-  socket.on('disconnect', () => {
-    console.log('Player disconnected:', socket.id);
-    
-    // Remove from waiting players
-    const waitingIndex = waitingPlayers.findIndex(p => p.id === socket.id);
-    if (waitingIndex !== -1) {
-      waitingPlayers.splice(waitingIndex, 1);
-    }
-    
-    // Handle game cleanup
-    for (const [gameId, game] of games) {
-      const playerInGame = game.players.find(p => p.id === socket.id);
-      if (playerInGame) {
-        game.broadcast('playerDisconnected', { playerId: socket.id });
-        game.cleanup();
-        break;
-      }
-    }
+  // Try to match with waiting player
+  if (waitingPlayers.length > 0) {
+    const opponent = waitingPlayers.shift();
+    const game = new DuelGame(opponent, player);
+    res.json({ 
+      playerId,
+      status: 'matched',
+      gameId: game.id
+    });
+  } else {
+    waitingPlayers.push(player);
+    res.json({ 
+      playerId,
+      status: 'waiting'
+    });
+  }
+});
+
+app.get('/api/game/:playerId', (req, res) => {
+  const player = players.get(req.params.playerId);
+  if (!player) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+  
+  player.lastSeen = Date.now();
+  
+  if (!player.gameId) {
+    return res.json({ status: 'waiting' });
+  }
+  
+  const game = games.get(player.gameId);
+  if (!game) {
+    return res.json({ status: 'waiting' });
+  }
+  
+  res.json({
+    status: 'game',
+    ...game.getGameState(player.id)
   });
 });
 
+app.post('/api/draw', (req, res) => {
+  const { playerId, drawTime } = req.body;
+  const player = players.get(playerId);
+  
+  if (!player || !player.gameId) {
+    return res.status(400).json({ error: 'Invalid player or no active game' });
+  }
+  
+  const game = games.get(player.gameId);
+  if (!game) {
+    return res.status(400).json({ error: 'Game not found' });
+  }
+  
+  const success = game.playerDraw(playerId, drawTime);
+  res.json({ success });
+});
+
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+module.exports = app;

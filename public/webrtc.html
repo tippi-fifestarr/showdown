@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Showdown WebRTC - High Noon Dueling</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Georgia', serif;
+            background: linear-gradient(45deg, #8B4513, #D2691E);
+            color: #F5DEB3;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .title {
+            font-size: 3rem;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.8);
+            margin-bottom: 20px;
+            color: #FFD700;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        
+        .game-area {
+            width: 100%;
+            max-width: 400px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            padding: 30px;
+            border: 3px solid #8B4513;
+        }
+        
+        .menu-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .menu-button, .join-form button, .restart-btn {
+            padding: 15px 25px;
+            font-size: 1.2rem;
+            background: #8B4513;
+            color: #F5DEB3;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .menu-button:hover, .join-form button:hover, .restart-btn:hover {
+            background: #A0522D;
+        }
+        
+        .join-form {
+            margin-bottom: 20px;
+        }
+        
+        .join-form input {
+            padding: 10px;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            background: rgba(255,255,255,0.9);
+            color: #333;
+            width: 100%;
+        }
+        
+        .room-code {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #FFD700;
+            background: rgba(0,0,0,0.4);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            letter-spacing: 3px;
+        }
+        
+        .status {
+            font-size: 1.2rem;
+            margin: 15px 0;
+        }
+        
+        .countdown {
+            font-size: 4rem;
+            font-weight: bold;
+            color: #FF4500;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            margin: 20px 0;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .instructions {
+            font-size: 1rem;
+            line-height: 1.6;
+            margin: 20px 0;
+            opacity: 0.8;
+        }
+        
+        .phone-position {
+            margin: 20px 0;
+            font-weight: bold;
+            color: #FFD700;
+        }
+        
+        .draw-indicator {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            margin: 20px auto;
+            border: 4px solid #8B4513;
+            background: #FF4500;
+            display: none;
+            animation: pulse 0.5s infinite alternate;
+        }
+        
+        @keyframes pulse {
+            from { transform: scale(1); }
+            to { transform: scale(1.1); }
+        }
+        
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0,0,0,0.4);
+            border-radius: 10px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .high-noon-flash {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #FFD700;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.1s;
+        }
+        
+        .vibrate-ready {
+            animation: shake 0.5s ease-in-out infinite;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        .signaling {
+            font-size: 0.8rem;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        
+        .signaling textarea {
+            width: 100%;
+            height: 60px;
+            font-size: 0.7rem;
+            padding: 5px;
+            background: rgba(255,255,255,0.9);
+            border: none;
+            border-radius: 3px;
+        }
+        
+        .signaling button {
+            padding: 5px 10px;
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="high-noon-flash" id="flash"></div>
+    
+    <div class="container">
+        <h1 class="title">🤠 SHOWDOWN P2P 🤠</h1>
+        <p class="subtitle">WebRTC Direct Dueling</p>
+        
+        <div class="game-area">
+            <!-- Menu Screen -->
+            <div id="menu">
+                <div class="menu-buttons">
+                    <button class="menu-button" onclick="createRoom()">Create Room</button>
+                    <button class="menu-button" onclick="document.getElementById('joinForm').style.display='block'">Join Room</button>
+                </div>
+                
+                <div id="joinForm" style="display: none;">
+                    <div class="join-form">
+                        <input type="text" id="roomCodeInput" placeholder="Enter room code" maxlength="6">
+                        <button onclick="joinRoom()">Join Duel</button>
+                    </div>
+                </div>
+                
+                <div class="instructions">
+                    <strong>WebRTC P2P Dueling:</strong><br>
+                    • Direct phone-to-phone connection<br>
+                    • Ultra-low latency<br>
+                    • Create room or join with code<br>
+                    • Tilt phone up fast to draw!
+                </div>
+            </div>
+            
+            <!-- Room Screen -->
+            <div id="room" class="hidden">
+                <div class="status" id="roomStatus">Setting up room...</div>
+                <div class="room-code" id="roomCode">ABCD12</div>
+                <div style="font-size: 0.9rem; opacity: 0.8;">Share this code with your opponent</div>
+                
+                <!-- Manual signaling (for demo - real app would use server) -->
+                <div id="offerSection" style="display: none;" class="signaling">
+                    <div>Send this to your opponent:</div>
+                    <textarea id="offerData" readonly></textarea>
+                </div>
+                
+                <div id="answerSection" style="display: none;" class="signaling">
+                    <div>Paste opponent's offer:</div>
+                    <textarea id="offerInput" placeholder="Paste offer data here..."></textarea>
+                    <button onclick="handleOffer()">Process Offer</button>
+                    
+                    <div id="answerOutput" style="display: none;">
+                        <div>Send this answer back:</div>
+                        <textarea id="answerData" readonly></textarea>
+                    </div>
+                </div>
+                
+                <div id="finalStep" style="display: none;" class="signaling">
+                    <div>Paste opponent's answer:</div>
+                    <textarea id="answerInput" placeholder="Paste answer data here..."></textarea>
+                    <button onclick="handleAnswer()">Connect</button>
+                </div>
+            </div>
+            
+            <!-- Game Screen -->
+            <div id="game" class="hidden">
+                <div class="status" id="gameStatus">Get ready...</div>
+                <div class="countdown" id="countdown"></div>
+                <div class="phone-position" id="phoneInstruction">Hold phone upright, wait for signal</div>
+                <div class="draw-indicator" id="drawIndicator"></div>
+            </div>
+            
+            <!-- Results Screen -->
+            <div id="results" class="hidden">
+                <div class="results">
+                    <div id="resultText"></div>
+                    <button class="restart-btn" onclick="restartGame()">Play Again</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="webrtc-game.js"></script>
+</body>
+</html>
