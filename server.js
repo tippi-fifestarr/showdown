@@ -54,6 +54,14 @@ class DuelGame {
     setTimeout(() => {
       if (this.state === 'dueling') {
         this.highNoonTime = Date.now();
+        
+        // End game after 10 seconds if not both players have drawn
+        setTimeout(() => {
+          if (this.state === 'dueling') {
+            console.log('Game timeout - ending duel');
+            this.finishDuel();
+          }
+        }, 10000);
       }
     }, delay);
   }

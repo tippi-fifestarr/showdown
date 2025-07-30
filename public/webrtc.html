@@ -243,7 +243,7 @@
             <div id="calibration" class="hidden">
                 <div class="status">📱 Tilt Calibration</div>
                 <div id="calibrationStep" class="instructions">
-                    Step 1: Hold phone upright (like holstered gun)<br>
+                    Step 1: Hold phone upside down (like holstered gun)<br>
                     <button onclick="window.game.calibrateResting()">Set Resting Position</button>
                 </div>
                 <div id="calibrationData" class="signaling" style="display: none;">
@@ -263,25 +263,25 @@
                 
                 <!-- Manual signaling (for demo - real app would use server) -->
                 <div id="offerSection" style="display: none;" class="signaling">
-                    <div>Send this to your opponent:</div>
+                    <div>1. Send this to your opponent:</div>
                     <textarea id="offerData" readonly></textarea>
                 </div>
                 
+                <div id="finalStep" style="display: none;" class="signaling">
+                    <div>2. Paste their answer here:</div>
+                    <textarea id="answerInput" placeholder="Paste opponent's answer data here..."></textarea>
+                    <button onclick="handleAnswer()">Connect</button>
+                </div>
+                
                 <div id="answerSection" style="display: none;" class="signaling">
-                    <div>Paste opponent's offer:</div>
+                    <div>1. Paste opponent's offer:</div>
                     <textarea id="offerInput" placeholder="Paste offer data here..."></textarea>
                     <button onclick="handleOffer()">Process Offer</button>
                     
                     <div id="answerOutput" style="display: none;">
-                        <div>Send this answer back:</div>
+                        <div>2. Send this answer back:</div>
                         <textarea id="answerData" readonly></textarea>
                     </div>
-                </div>
-                
-                <div id="finalStep" style="display: none;" class="signaling">
-                    <div>Paste opponent's answer:</div>
-                    <textarea id="answerInput" placeholder="Paste answer data here..."></textarea>
-                    <button onclick="handleAnswer()">Connect</button>
                 </div>
             </div>
             
@@ -289,7 +289,7 @@
             <div id="game" class="hidden">
                 <div class="status" id="gameStatus">Get ready...</div>
                 <div class="countdown" id="countdown"></div>
-                <div class="phone-position" id="phoneInstruction">Hold phone upright, wait for signal</div>
+                <div class="phone-position" id="phoneInstruction">Hold phone upside down, wait for signal</div>
                 <div class="draw-indicator" id="drawIndicator"></div>
             </div>
             

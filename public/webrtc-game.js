@@ -22,8 +22,16 @@ class WebRTCShowdown {
         this.isCalibrating = false;
         this.isCalibrated = false;
         
-        this.initializeEventListeners();
-        this.requestDevicePermissions();
+        // Initialize after DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                this.initializeEventListeners();
+                this.requestDevicePermissions();
+            });
+        } else {
+            this.initializeEventListeners();
+            this.requestDevicePermissions();
+        }
     }
     
     async requestDevicePermissions() {
@@ -168,17 +176,15 @@ class WebRTCShowdown {
             }
         });
         
-        document.getElementById('playerName').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.createRoom();
-            }
-        });
-        
-        document.getElementById('roomCodeInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.joinRoom();
-            }
-        });
+        // Safe DOM element access
+        const roomCodeInput = document.getElementById('roomCodeInput');
+        if (roomCodeInput) {
+            roomCodeInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.joinRoom();
+                }
+            });
+        }
     }
     
     // Create a new room (host)
@@ -468,6 +474,8 @@ class WebRTCShowdown {
     showOffer(offerData) {
         document.getElementById('offerData').textContent = offerData;
         document.getElementById('offerSection').style.display = 'block';
+        // Show the final step section so creator can input the answer
+        document.getElementById('finalStep').style.display = 'block';
     }
     
     showAnswerInstructions() {
@@ -495,12 +503,31 @@ class WebRTCShowdown {
     }
     
     async handleAnswerInput() {
-        const answerText = document.getElementById('answerInput').value;
+        const answerText = document.getElementById('answerInput').value.trim();
+        
+        if (!answerText) {
+            alert('Please paste the answer data first');
+            return;
+        }
+        
         try {
+            console.log('Parsing answer:', answerText);
             const data = JSON.parse(answerText);
+            
+            if (!data.answer || !data.answer.sdp) {
+                alert('Invalid answer format - missing answer.sdp');
+                return;
+            }
+            
+            console.log('Setting remote description:', data.answer);
             await this.peerConnection.setRemoteDescription(data.answer);
+            console.log('Remote description set successfully');
+            
+            document.getElementById('roomStatus').textContent = 'Answer processed! Connecting...';
+            
         } catch (error) {
-            alert('Invalid answer data');
+            console.error('Answer processing error:', error);
+            alert(`Invalid answer data: ${error.message}\n\nMake sure you copied the entire JSON starting with { and ending with }`);
         }
     }
     

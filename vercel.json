@@ -12,6 +12,14 @@
   ],
   "routes": [
     {
+      "src": "/webrtc.html",
+      "dest": "/public/webrtc.html"
+    },
+    {
+      "src": "/webrtc-game.js",
+      "dest": "/public/webrtc-game.js"
+    },
+    {
       "src": "/game.js",
       "dest": "/public/game.js"
     },

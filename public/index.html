@@ -123,6 +123,34 @@
             animation: pulse 0.5s infinite alternate;
         }
         
+        .moving-dot-container {
+            width: 300px;
+            height: 80px;
+            margin: 20px auto;
+            background: rgba(0,0,0,0.3);
+            border-radius: 40px;
+            border: 2px solid #8B4513;
+            position: relative;
+            display: none;
+        }
+        
+        .moving-dot {
+            width: 20px;
+            height: 20px;
+            background: #FFD700;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            animation: moveBackForth 2s ease-in-out infinite alternate;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.8);
+        }
+        
+        @keyframes moveBackForth {
+            0% { left: 10px; }
+            100% { left: calc(100% - 30px); }
+        }
+        
         @keyframes pulse {
             from { transform: scale(1); }
             to { transform: scale(1.1); }
@@ -178,22 +206,44 @@
                 </div>
                 <div class="instructions">
                     <strong>How to Play:</strong><br>
-                    1. Hold phone like holstered gun (upright)<br>
-                    2. Wait for countdown and "HIGH NOON!"<br>
-                    3. Draw fast - tilt phone up and tap to fire!<br>
-                    4. Fastest draw wins the duel
+                    1. Calibrate your phone's tilt first<br>
+                    2. Hold phone upside down (like holstered gun)<br>
+                    3. Wait for countdown and "HIGH NOON!"<br>
+                    4. Draw fast - tilt phone up and tap to fire!<br>
+                    5. Fastest draw wins the duel
                 </div>
+                
+                <button class="join-form button" onclick="startCalibration()" style="background: #228B22; margin-bottom: 10px;">📱 Calibrate Tilt</button>
             </div>
             
+            <!-- Calibration Screen -->
+            <div id="calibration" class="hidden">
+                <div class="status">📱 Tilt Calibration</div>
+                <div id="calibrationStep" class="instructions">
+                    Step 1: Hold phone upside down (like holstered gun)<br>
+                    <button onclick="window.game.calibrateResting()">Set Resting Position</button>
+                </div>
+                <div id="calibrationData" class="signaling" style="display: none; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 0.8rem;">
+                    <div>Current tilt: <span id="currentTilt">0°</span></div>
+                    <div>Resting: <span id="restingAngle">--°</span></div>
+                    <div>Draw threshold: <span id="drawThreshold">30°</span></div>
+                    <div>Status: <span id="tiltDebug">Waiting...</span></div>
+                </div>
+                <button id="finishCalibration" onclick="window.game.finishCalibration()" style="display: none;">✅ Calibration Complete</button>
+            </div>
+
             <div id="waiting" class="hidden">
                 <div class="status">Waiting for opponent...</div>
-                <div class="phone-position">Hold phone upright like a holstered gun</div>
+                <div class="phone-position">Hold phone upside down like a holstered gun</div>
             </div>
             
             <div id="game" class="hidden">
                 <div class="status" id="gameStatus">Get ready...</div>
                 <div class="countdown" id="countdown"></div>
-                <div class="phone-position" id="phoneInstruction">Hold phone upright, wait for signal</div>
+                <div class="phone-position" id="phoneInstruction">Hold phone upside down, wait for signal</div>
+                <div class="moving-dot-container" id="movingDotContainer">
+                    <div class="moving-dot"></div>
+                </div>
                 <div class="draw-indicator" id="drawIndicator"></div>
             </div>
             

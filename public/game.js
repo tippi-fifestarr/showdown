@@ -11,9 +11,12 @@ class ShowdownGame {
             beta: 0,
             gamma: 0
         };
+        this.restingBeta = null;
         this.initialBeta = null;
         this.drawThreshold = 30; // degrees to tilt up for draw
         this.pollInterval = null;
+        this.isCalibrating = false;
+        this.isCalibrated = false;
         
         this.initializeEventListeners();
         this.requestDevicePermissions();
@@ -40,7 +43,11 @@ class ShowdownGame {
             this.deviceMotion.beta = event.beta || 0;
             this.deviceMotion.gamma = event.gamma || 0;
             
-            this.handleDeviceMotion();
+            if (this.isCalibrating) {
+                this.updateCalibrationDisplay();
+            } else {
+                this.handleDeviceMotion();
+            }
         });
     }
     
@@ -49,7 +56,7 @@ class ShowdownGame {
         
         // Set initial position when high noon starts
         if (this.initialBeta === null) {
-            this.initialBeta = this.deviceMotion.beta;
+            this.initialBeta = this.restingBeta || this.deviceMotion.beta;
             return;
         }
         
@@ -126,7 +133,7 @@ class ShowdownGame {
             } catch (error) {
                 console.error('Polling error:', error);
             }
-        }, 500); // Poll every 500ms
+        }, 200); // Poll every 200ms for faster response
     }
     
     handleGameUpdate(data) {
@@ -141,11 +148,19 @@ class ShowdownGame {
         if (data.status === 'game') {
             this.gameId = data.gameId;
             
+            // Show opponent name
+            if (data.opponent) {
+                const opponentName = data.opponent.name;
+                document.getElementById('gameStatus').textContent = `Dueling ${opponentName}...`;
+            }
+            
             if (data.state === 'countdown') {
                 if (this.gameState !== 'countdown') {
                     this.gameState = 'countdown';
                     this.showScreen('game');
-                    document.getElementById('gameStatus').textContent = 'Duel starting...';
+                    if (data.opponent) {
+                        document.getElementById('gameStatus').textContent = `Dueling ${data.opponent.name}...`;
+                    }
                 }
                 
                 const countdownEl = document.getElementById('countdown');
@@ -164,7 +179,9 @@ class ShowdownGame {
                         this.startHighNoon(data.highNoonTime);
                     } else {
                         document.getElementById('gameStatus').textContent = 'Get ready to draw...';
-                        document.getElementById('phoneInstruction').textContent = 'Hold phone upright, wait for signal';
+                        document.getElementById('phoneInstruction').textContent = 'Hold phone upside down, wait for signal';
+                        // Show moving dot while waiting for high noon
+                        document.getElementById('movingDotContainer').style.display = 'block';
                     }
                 }
                 
@@ -174,7 +191,10 @@ class ShowdownGame {
                 }
                 
             } else if (data.state === 'finished') {
-                this.showResults(data);
+                console.log('Game finished, showing results:', data);
+                if (this.gameState !== 'finished') {
+                    this.showResults(data);
+                }
             }
         }
     }
@@ -185,6 +205,8 @@ class ShowdownGame {
         
         document.getElementById('gameStatus').textContent = 'HIGH NOON!';
         document.getElementById('phoneInstruction').textContent = 'DRAW! Tilt phone up fast!';
+        // Hide moving dot and show draw indicator
+        document.getElementById('movingDotContainer').style.display = 'none';
         document.getElementById('drawIndicator').style.display = 'block';
         
         // Flash effect
@@ -214,7 +236,8 @@ class ShowdownGame {
         document.getElementById('drawIndicator').style.background = '#32CD32';
         
         try {
-            await fetch('/api/draw', {
+            console.log('Submitting draw:', this.playerId, this.drawTime);
+            const response = await fetch('/api/draw', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -224,6 +247,8 @@ class ShowdownGame {
                     drawTime: this.drawTime
                 })
             });
+            const result = await response.json();
+            console.log('Draw response:', result);
         } catch (error) {
             console.error('Error submitting draw:', error);
         }
@@ -238,7 +263,7 @@ class ShowdownGame {
     }
     
     showScreen(screen) {
-        const screens = ['menu', 'waiting', 'game', 'results'];
+        const screens = ['menu', 'calibration', 'waiting', 'game', 'results'];
         screens.forEach(s => {
             document.getElementById(s).classList.add('hidden');
         });
@@ -246,6 +271,7 @@ class ShowdownGame {
     }
     
     showResults(data) {
+        console.log('ShowResults called with:', data);
         this.gameState = 'finished';
         this.showScreen('results');
         
@@ -266,14 +292,17 @@ class ShowdownGame {
             resultText = `💀 Defeated! 💀<br>`;
         }
         
+        // Get opponent name from data
+        const opponentName = data.opponent?.name || 'Opponent';
+        
         if (myResult && opponentResult) {
             resultText += `Your draw: ${myResult.drawTime}ms<br>`;
-            resultText += `Opponent: ${opponentResult.drawTime}ms<br>`;
+            resultText += `${opponentName}: ${opponentResult.drawTime}ms<br>`;
             resultText += `Difference: ${Math.abs(myResult.drawTime - opponentResult.drawTime)}ms`;
         } else if (myResult) {
-            resultText += `You drew in ${myResult.drawTime}ms<br>Opponent didn't draw!`;
+            resultText += `You drew in ${myResult.drawTime}ms<br>${opponentName} didn't draw!`;
         } else {
-            resultText += `You didn't draw in time!`;
+            resultText += `You didn't draw in time!<br>${opponentName} wins!`;
         }
         
         document.getElementById('resultText').innerHTML = resultText;
@@ -295,9 +324,68 @@ class ShowdownGame {
         
         document.getElementById('drawIndicator').style.display = 'none';
         document.getElementById('drawIndicator').style.background = '#FF4500';
+        document.getElementById('movingDotContainer').style.display = 'none';
         document.getElementById('countdown').textContent = '';
         
         this.showScreen('menu');
+    }
+    
+    // Calibration methods
+    startCalibration() {
+        this.isCalibrating = true;
+        this.showScreen('calibration');
+        document.getElementById('calibrationData').style.display = 'block';
+    }
+    
+    updateCalibrationDisplay() {
+        const currentTilt = Math.round(this.deviceMotion.beta * 10) / 10;
+        document.getElementById('currentTilt').textContent = currentTilt + '°';
+        
+        if (this.restingBeta !== null) {
+            const tiltFromResting = Math.round((this.restingBeta - this.deviceMotion.beta) * 10) / 10;
+            const status = tiltFromResting > this.drawThreshold ? '🔥 DRAW!' : 
+                          tiltFromResting > 10 ? '⚡ Getting there...' : '📱 Hold steady';
+            document.getElementById('tiltDebug').textContent = status;
+        }
+    }
+    
+    calibrateResting() {
+        this.restingBeta = this.deviceMotion.beta;
+        document.getElementById('restingAngle').textContent = Math.round(this.restingBeta * 10) / 10 + '°';
+        document.getElementById('calibrationStep').innerHTML = `
+            Step 2: Practice drawing (tilt phone up fast)<br>
+            Current sensitivity: ${this.drawThreshold}°<br>
+            <button onclick="window.game.adjustSensitivity(-10)">More Sensitive</button>
+            <button onclick="window.game.adjustSensitivity(10)">Less Sensitive</button>
+        `;
+        document.getElementById('finishCalibration').style.display = 'block';
+    }
+    
+    adjustSensitivity(change) {
+        this.drawThreshold = Math.max(10, Math.min(60, this.drawThreshold + change));
+        document.getElementById('drawThreshold').textContent = this.drawThreshold + '°';
+        document.getElementById('calibrationStep').innerHTML = `
+            Step 2: Practice drawing (tilt phone up fast)<br>
+            Current sensitivity: ${this.drawThreshold}°<br>
+            <button onclick="window.game.adjustSensitivity(-10)">More Sensitive</button>
+            <button onclick="window.game.adjustSensitivity(10)">Less Sensitive</button>
+        `;
+    }
+    
+    finishCalibration() {
+        this.isCalibrating = false;
+        this.isCalibrated = true;
+        this.showScreen('menu');
+        
+        // Update instructions with calibrated sensitivity
+        const instructions = document.querySelector('.instructions');
+        if (instructions) {
+            instructions.innerHTML = `
+                <strong>Calibrated & Ready!</strong><br>
+                Draw sensitivity: ${this.drawThreshold}°<br>
+                Hold phone upside down, tilt up fast to draw!
+            `;
+        }
     }
 }
 
@@ -309,6 +397,10 @@ window.addEventListener('load', () => {
 // Global functions for HTML onclick handlers
 function joinGame() {
     window.game.joinGame();
+}
+
+function startCalibration() {
+    window.game.startCalibration();
 }
 
 function restartGame() {
